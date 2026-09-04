@@ -13,7 +13,6 @@ import fr.olympicraft.test.dummy.DummyManager;
 import fr.olympicraft.test.dummy.DummyParticipant;
 import fr.olympicraft.config.model.game.SumoConfig;
 import fr.olympicraft.game.sumo.gui.SumoKitSelectionMenu;
-import fr.olympicraft.game.sumo.kit.SumoKitSelectionMode;
 import fr.olympicraft.game.sumo.kit.SumoKitSelectionSession;
 import fr.olympicraft.game.sumo.kit.SumoKitService;
 
@@ -24,10 +23,13 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.ArrayList;
 import java.util.List;
@@ -128,6 +130,7 @@ public final class SumoRuntime implements GameRuntime {
         overtimeStarted = false;
         countdownPrepared = true;
 
+        activePlayerKits.clear();
         /*
          * La session de sélection des kits doit être créée
          * avant le premier appel à usesMenu().
@@ -181,11 +184,7 @@ public final class SumoRuntime implements GameRuntime {
          * resolveKitSelection() peut annuler la partie
          * lorsque la configuration ne permet aucun kit.
          */
-        if (kitSelection.cancelled()) {
-            return false;
-        }
-
-        return true;
+        return !kitSelection.cancelled();
     }
 
     @Override
@@ -254,6 +253,7 @@ public final class SumoRuntime implements GameRuntime {
         kitSelection = null;
         kitSelectionResolved = false;
         kitDistributed = false;
+        activePlayerKits.clear();
     }
 
     @Override
@@ -431,6 +431,7 @@ public final class SumoRuntime implements GameRuntime {
     ) {
         stopOvertimeMusic(instance);
         removeResistance(instance);
+        activePlayerKits.clear();
     }
 
     @Override
@@ -439,6 +440,7 @@ public final class SumoRuntime implements GameRuntime {
     ) {
         stopOvertimeMusic(instance);
         removeResistance(instance);
+        activePlayerKits.clear();
     }
 
     private List<SumoFighter> resolveFighters(
@@ -1145,10 +1147,79 @@ public final class SumoRuntime implements GameRuntime {
                             player,
                             preset
                     );
+
+                    activePlayerKits.put(
+                            player.getUUID(),
+                            preset
+                    );
                 }
             }
         }
     }
+
+    public SumoConfig.KitItem findActiveKitItem(
+            ServerPlayer player,
+            ItemStack stack
+    ) {
+        if (player == null
+                || stack == null
+                || stack.isEmpty()) {
+            return null;
+        }
+
+        SumoConfig.KitPreset preset =
+                activePlayerKits.get(
+                        player.getUUID()
+                );
+
+        if (preset == null
+                || preset.items == null) {
+            return null;
+        }
+
+        int selectedSlot =
+                player.getInventory().selected;
+
+        for (SumoConfig.KitItem item :
+                preset.items) {
+            if (item == null || !item.enabled) {
+                continue;
+            }
+
+            /*
+             * Le slot permet de différencier deux objets identiques
+             * possédant des règles différentes.
+             */
+            int configuredSlot =
+                    Math.clamp(
+                            item.slot,
+                            0,
+                            player.getInventory()
+                                    .items.size() - 1
+                    );
+
+            if (configuredSlot != selectedSlot) {
+                continue;
+            }
+
+            ResourceLocation itemId =
+                    ResourceLocation.tryParse(
+                            item.item
+                    );
+
+            if (itemId == null) {
+                continue;
+            }
+
+            if (BuiltInRegistries.ITEM.get(itemId)
+                    == stack.getItem()) {
+                return item;
+            }
+        }
+
+        return null;
+    }
+
     private void stopOvertimeMusic(
             GameInstance instance
     ) {
@@ -1173,6 +1244,28 @@ public final class SumoRuntime implements GameRuntime {
                             player,
                             soundId
                     );
+        }
+    }
+
+    /*
+     * Preset réellement attribué à chaque joueur.
+     *
+     * Cette information permet notamment de retrouver les règles
+     * preventDrop et preventMove des objets distribués.
+     */
+    private final Map<UUID, SumoConfig.KitPreset>
+            activePlayerKits =
+            new HashMap<>();
+
+    @Override
+    public void onPlayerLeft(
+            GameInstance instance,
+            UUID playerId
+    ) {
+        if (playerId != null) {
+            activePlayerKits.remove(
+                    playerId
+            );
         }
     }
 }

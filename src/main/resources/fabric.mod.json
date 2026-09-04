@@ -26,6 +26,7 @@
   ]
 },
 	"mixins": [
+		"olympicraft.common.mixins.json",
 		"olympicraft.client.mixins.json"
 	],
 	"depends": {

@@ -31,3 +31,6 @@ Sous Windows :
 
 ```powershell
 .\gradlew.bat build
+```
+
+Freddie le beau gosse !

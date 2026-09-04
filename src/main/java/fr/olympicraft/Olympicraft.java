@@ -8,6 +8,7 @@ import fr.olympicraft.command.OlympicraftCommands;
 import fr.olympicraft.config.OlympicraftConfigManager;
 import fr.olympicraft.game.BuiltinGames;
 import fr.olympicraft.game.GameRegistry;
+import fr.olympicraft.game.murder.chat.MurderMysteryChatService;
 import fr.olympicraft.gui.GuiManager;
 import fr.olympicraft.integration.worldedit.WorldEditSelectionProvider;
 import fr.olympicraft.internal.BuildDefaults;
@@ -113,6 +114,10 @@ public final class Olympicraft implements ModInitializer {
     private static final EnhancedClientManager ENHANCED_CLIENTS =
             new EnhancedClientManager();
 
+    private static final MurderMysteryChatService
+            MURDER_MYSTERY_CHAT =
+            new MurderMysteryChatService();
+
     @Override
     public void onInitialize() {
         LOGGER.info("Initialisation d'Olympicraft.");
@@ -139,6 +144,8 @@ public final class Olympicraft implements ModInitializer {
         );
 
         registerDamageProtection();
+
+        MURDER_MYSTERY_CHAT.register();
 
         ARENA_EDITOR.registerEvents();
 

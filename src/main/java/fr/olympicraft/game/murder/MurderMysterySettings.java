@@ -91,4 +91,36 @@ public final class MurderMysterySettings {
     public boolean normalDamageEnabled() {
         return config.combat.normalDamageEnabled;
     }
+    ///////////////////////
+    // Chat de proximité //
+    ///////////////////////
+
+    public boolean proximityChatEnabled() {
+        return config.proximityChat.enabled;
+    }
+
+    public double proximityChatHorizontalRange() {
+        return config.proximityChat
+                .horizontalRange;
+    }
+
+    public double proximityChatVerticalRange() {
+        return config.proximityChat
+                .verticalRange;
+    }
+
+    public boolean proximityChatRequireSameDimension() {
+        return config.proximityChat
+                .requireSameDimension;
+    }
+
+    public boolean spectatorsCanHearLiving() {
+        return config.proximityChat
+                .spectatorsCanHearLiving;
+    }
+
+    public boolean deadPlayersCanTalkTogether() {
+        return config.proximityChat
+                .deadPlayersCanTalkTogether;
+    }
 }

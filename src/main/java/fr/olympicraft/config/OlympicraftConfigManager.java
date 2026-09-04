@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
 
 public final class OlympicraftConfigManager {
 
@@ -68,9 +69,9 @@ public final class OlympicraftConfigManager {
             murderMystery.validate();
 
             /*
-             * Les fichiers existants ne sont pas réécrits
-             * pendant le chargement. Leurs commentaires JSON5
-             * restent donc intacts.
+             * Les fichiers existants ne sont pas réécrits lors
+             * du chargement. Leurs commentaires JSON5 restent
+             * donc intacts.
              */
             loaded = true;
 
@@ -214,12 +215,11 @@ public final class OlympicraftConfigManager {
 
             defaults.validate();
 
-            Json5ConfigWriter
-                    .writeMurderMystery(
-                            path,
-                            defaults,
-                            gson
-                    );
+            Json5ConfigWriter.writeMurderMystery(
+                    path,
+                    defaults,
+                    gson
+            );
 
             return defaults;
         }
@@ -337,13 +337,11 @@ public final class OlympicraftConfigManager {
         );
 
         Files.createDirectories(
-                ConfigPaths
-                        .pendingPlayerSnapshots()
+                ConfigPaths.pendingPlayerSnapshots()
         );
 
         Files.createDirectories(
-                ConfigPaths
-                        .playerSnapshotArchives()
+                ConfigPaths.playerSnapshotArchives()
         );
     }
 
@@ -420,10 +418,7 @@ public final class OlympicraftConfigManager {
                      Files.walk(directory)) {
             for (Path path :
                     paths.sorted(
-                                    (first, second) ->
-                                            second.compareTo(
-                                                    first
-                                            )
+                                    Comparator.reverseOrder()
                             )
                             .toList()) {
                 Files.deleteIfExists(path);

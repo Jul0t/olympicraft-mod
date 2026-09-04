@@ -73,18 +73,16 @@ public final class ConfigPaths {
     public static Path pendingPlayerSnapshot(
             UUID playerId
     ) {
-        return pendingPlayerSnapshots()
-                .resolve(
-                        playerId + ".dat"
-                );
+        return pendingPlayerSnapshots().resolve(
+                playerId + ".dat"
+        );
     }
 
     public static Path playerSnapshotArchiveDirectory(
             UUID playerId
     ) {
-        return playerSnapshotArchives()
-                .resolve(
-                        playerId.toString()
-                );
+        return playerSnapshotArchives().resolve(
+                playerId.toString()
+        );
     }
 }

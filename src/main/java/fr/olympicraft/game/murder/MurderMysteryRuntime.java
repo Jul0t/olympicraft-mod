@@ -8,7 +8,6 @@ import fr.olympicraft.game.murder.role.MurderMysteryRole;
 import fr.olympicraft.game.murder.role.MurderMysteryRoleAllocator;
 import fr.olympicraft.match.GameInstance;
 import fr.olympicraft.match.GameParticipant;
-import fr.olympicraft.match.ParticipantRole;
 import fr.olympicraft.match.runtime.GameRuntime;
 
 import net.minecraft.ChatFormatting;
@@ -647,6 +646,10 @@ public final class MurderMysteryRuntime
     private void revealMurderers(
             GameInstance instance
     ) {
+        if (instance == null) {
+            return;
+        }
+
         if (!settings.config()
                 .roles
                 .revealMurdererAtEnd) {
@@ -664,6 +667,93 @@ public final class MurderMysteryRuntime
                         .map(
                                 MurderMysteryParticipant::alias
                         )
+                        .filter(alias ->
+                                alias != null
+                                        && !alias.isBlank()
+                        )
                         .toList();
 
-        if (murderers.isEmpty
+        if (murderers.isEmpty()) {
+            instance.broadcast(
+                    Component.literal(
+                            "Aucun Meurtrier n'a pu être identifié."
+                    ).withStyle(
+                            ChatFormatting.GRAY
+                    )
+            );
+
+            return;
+        }
+
+        String murdererNames =
+                String.join(
+                        ", ",
+                        murderers
+                );
+
+        Component message =
+                Component.empty()
+                        .append(
+                                Component.literal(
+                                        "Le Meurtrier était : "
+                                ).withStyle(
+                                        ChatFormatting.GRAY
+                                )
+                        )
+                        .append(
+                                Component.literal(
+                                        murdererNames
+                                ).withStyle(
+                                        ChatFormatting.RED
+                                )
+                        )
+                        .append(
+                                Component.literal(
+                                        "."
+                                ).withStyle(
+                                        ChatFormatting.GRAY
+                                )
+                        );
+
+        instance.broadcast(message);
+    }
+
+    /*
+     * Efface les données internes de la partie.
+     *
+     * La restauration de l'inventaire, de la position et du mode
+     * de jeu est prise en charge par PlayerMatchService.
+     */
+    private void clearRuntimeState() {
+        participants.clear();
+
+        roundTicks = 0;
+        preparationTicks = 0;
+
+        prepared = false;
+        finished = false;
+        troublemakerPresent = false;
+    }
+
+    private static String formatTime(
+            int totalSeconds
+    ) {
+        int safeSeconds =
+                Math.max(
+                        0,
+                        totalSeconds
+                );
+
+        int minutes =
+                safeSeconds / 60;
+
+        int seconds =
+                safeSeconds % 60;
+
+        return String.format(
+                "%02d:%02d",
+                minutes,
+                seconds
+        );
+    }
+}

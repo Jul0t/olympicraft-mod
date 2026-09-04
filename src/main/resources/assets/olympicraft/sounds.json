@@ -1,0 +1,37 @@
+{
+  "enhanced.test": {
+    "sounds": [
+      {
+        "name": "olympicraft:enhanced/test",
+        "stream": false
+      }
+    ]
+  },
+
+  "sumo.overtime": {
+    "sounds": [
+      {
+        "name": "olympicraft:enhanced/sumo/overtime",
+        "stream": true
+      }
+    ]
+  },
+
+  "music.sumo_victory": {
+    "sounds": [
+      {
+        "name": "olympicraft:enhanced/sumo/victory",
+        "stream": false
+      }
+    ]
+  },
+
+  "music.sumo_defeat": {
+    "sounds": [
+      {
+        "name": "olympicraft:enhanced/sumo/defeat",
+        "stream": false
+      }
+    ]
+  }
+}

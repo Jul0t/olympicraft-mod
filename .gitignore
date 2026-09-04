@@ -1,0 +1,92 @@
+########################
+# Gradle et compilation #
+########################
+
+.gradle/
+build/
+out/
+classes/
+
+############################
+# Environnements Minecraft #
+############################
+
+run/
+runClient/
+runServer/
+
+#####################
+# IntelliJ IDEA     #
+#####################
+
+.idea/
+*.iml
+*.ipr
+*.iws
+
+#####################
+# Visual Studio Code #
+#####################
+
+.vscode/
+
+#####################
+# Eclipse           #
+#####################
+
+.classpath
+.project
+.settings/
+bin/
+
+#####################
+# Système           #
+#####################
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+#####################
+# Journaux et crashs #
+#####################
+
+*.log
+logs/
+crash-reports/
+hs_err_pid*
+replay_pid*
+
+#####################
+# Fichiers temporaires
+#####################
+
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+#####################
+# Secrets éventuels #
+#####################
+
+.env
+.env.*
+secrets.json
+credentials.json
+*.key
+*.pem
+
+#####################
+# Snapshots joueurs #
+#####################
+
+player-snapshots/
+config/olympicraft/player-snapshots/
+
+#####################
+# Config locale     #
+#####################
+
+config/olympicraft/

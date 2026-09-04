@@ -2,6 +2,7 @@ package fr.olympicraft.mixin;
 
 import fr.olympicraft.game.sumo.kit.SumoKitProtectionService;
 
+import net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
@@ -43,19 +44,24 @@ public abstract class ServerGamePacketListenerImplMixin {
         }
 
         /*
-         * Le paquet est annulé avant que Minecraft retire
+         * Empêche le serveur de retirer réellement
          * l'objet de l'inventaire.
          */
         callback.cancel();
 
         /*
-         * Resynchronise l'inventaire afin d'éviter une brève
-         * disparition visuelle de l'objet côté client.
+         * Le client a déjà retiré visuellement l'objet lorsqu'il
+         * a envoyé le paquet. On renvoie donc tout le contenu du
+         * menu d'inventaire afin de restaurer immédiatement
+         * l'affichage côté client.
          */
-        player.getInventory()
-                .setChanged();
-
-        player.inventoryMenu
-                .broadcastChanges();
+        player.connection.send(
+                new ClientboundContainerSetContentPacket(
+                        player.inventoryMenu.containerId,
+                        player.inventoryMenu.incrementStateId(),
+                        player.inventoryMenu.getItems(),
+                        player.inventoryMenu.getCarried()
+                )
+        );
     }
 }

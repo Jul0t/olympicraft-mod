@@ -9,11 +9,15 @@ import fr.olympicraft.game.murder.role.MurderMysteryRoleAllocator;
 import fr.olympicraft.match.GameInstance;
 import fr.olympicraft.match.GameParticipant;
 import fr.olympicraft.match.runtime.GameRuntime;
+import fr.olympicraft.game.murder.identity.MurderMysteryIdentityService;
+import fr.olympicraft.test.dummy.DummyManager;
+import fr.olympicraft.test.dummy.DummyParticipant;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.level.GameType;
 
 import java.util.ArrayList;
@@ -40,6 +44,11 @@ public final class MurderMysteryRuntime
             aliasAllocator =
             new MurderMysteryAliasAllocator();
 
+    private final DummyManager dummyManager;
+
+    private final MurderMysteryIdentityService
+            identityService;
+
     private final Map<
             UUID,
             MurderMysteryParticipant
@@ -62,6 +71,15 @@ public final class MurderMysteryRuntime
     ) {
         this.server = server;
         this.arena = arena;
+
+        this.dummyManager =
+                Olympicraft.dummies();
+
+        this.identityService =
+                new MurderMysteryIdentityService(
+                        server,
+                        arena.id
+                );
 
         this.settings =
                 new MurderMysterySettings(
@@ -176,16 +194,48 @@ public final class MurderMysteryRuntime
             );
         }
 
+        /*
+         * Chaque entrée de la liste n'est utilisée qu'une fois.
+         * Les joueurs et les dummies reçoivent donc forcément
+         * des spawns différents.
+         */
         Collections.shuffle(spawns);
 
         for (int index = 0;
              index < resolved.size();
              index++) {
-            prepareParticipant(
-                    resolved.get(index),
-                    spawns.get(index)
-            );
+            MurderMysteryParticipant participant =
+                    resolved.get(index);
+
+            ArenaPosition spawn =
+                    spawns.get(index);
+
+            if (!prepareParticipant(
+                    participant,
+                    spawn
+            )) {
+                Olympicraft.LOGGER.error(
+                        "La préparation du participant '{}' "
+                                + "a échoué dans l'arène '{}'.",
+                        participant.originalName(),
+                        arena.id
+                );
+
+                identityService.restoreAll();
+                participants.clear();
+
+                return false;
+            }
         }
+
+        /*
+         * Les alias sont appliqués seulement lorsque toutes
+         * les téléportations ont réussi.
+         */
+        identityService.applyAll(
+                participants.values()
+        );
+
 
         prepared = true;
 
@@ -388,6 +438,7 @@ public final class MurderMysteryRuntime
     public void onCountdownCancelled(
             GameInstance instance
     ) {
+        identityService.restoreAll();
         clearRuntimeState();
     }
 
@@ -396,12 +447,14 @@ public final class MurderMysteryRuntime
             GameInstance instance
     ) {
         revealMurderers(instance);
+        identityService.restoreAll();
     }
 
     @Override
     public void onReset(
             GameInstance instance
     ) {
+        identityService.restoreAll();
         clearRuntimeState();
     }
 
@@ -409,6 +462,7 @@ public final class MurderMysteryRuntime
     public void onShutdown(
             GameInstance instance
     ) {
+        identityService.restoreAll();
         clearRuntimeState();
     }
 
@@ -478,19 +532,39 @@ public final class MurderMysteryRuntime
         return result;
     }
 
-    private void prepareParticipant(
+    private boolean prepareParticipant(
+            MurderMysteryParticipant participant,
+            ArenaPosition spawn
+    ) {
+        if (participant == null || spawn == null) {
+            return false;
+        }
+
+        if (participant.dummy()) {
+            return prepareDummy(
+                    participant,
+                    spawn
+            );
+        }
+
+        return preparePlayer(
+                participant,
+                spawn
+        );
+    }
+
+    private boolean preparePlayer(
             MurderMysteryParticipant participant,
             ArenaPosition spawn
     ) {
         ServerPlayer player =
                 server.getPlayerList()
                         .getPlayer(
-                                participant
-                                        .participantId()
+                                participant.participantId()
                         );
 
         if (player == null) {
-            return;
+            return false;
         }
 
         player.closeContainer();
@@ -526,12 +600,67 @@ public final class MurderMysteryRuntime
                 player
         )) {
             Olympicraft.LOGGER.error(
-                    "Impossible de téléporter '{}' "
+                    "Impossible de téléporter le joueur '{}' "
                             + "dans l'arène Murder Mystery '{}'.",
                     participant.originalName(),
                     arena.id
             );
+
+            return false;
         }
+
+        return true;
+    }
+
+    private boolean prepareDummy(
+            MurderMysteryParticipant participant,
+            ArenaPosition spawn
+    ) {
+        DummyParticipant dummy =
+                dummyManager.findByParticipantId(
+                        arena.id,
+                        participant.participantId()
+                );
+
+        if (dummy == null) {
+            Olympicraft.LOGGER.error(
+                    "Le dummy '{}' est introuvable "
+                            + "dans l'arène '{}'.",
+                    participant.originalName(),
+                    arena.id
+            );
+
+            return false;
+        }
+
+        if (!dummyManager.teleport(
+                dummy,
+                spawn
+        )) {
+            Olympicraft.LOGGER.error(
+                    "Impossible de téléporter le dummy '{}' "
+                            + "dans l'arène Murder Mystery '{}'.",
+                    participant.originalName(),
+                    arena.id
+            );
+
+            return false;
+        }
+
+        ArmorStand entity =
+                dummyManager.entity(dummy);
+
+        if (entity != null) {
+            entity.setDeltaMovement(
+                    0.0D,
+                    0.0D,
+                    0.0D
+            );
+
+            entity.fallDistance = 0.0F;
+        }
+
+        return true;
     }
 
     private void sendPrivateRoles() {

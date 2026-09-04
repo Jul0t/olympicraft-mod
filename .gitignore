@@ -90,3 +90,9 @@ config/olympicraft/player-snapshots/
 #####################
 
 config/olympicraft/
+
+######################
+# Olympicraft-Backup #
+######################
+
+Olympicraft-Backup/

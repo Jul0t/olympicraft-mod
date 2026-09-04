@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import fr.olympicraft.config.model.GeneralConfig;
 import fr.olympicraft.config.model.MessageConfig;
 import fr.olympicraft.config.model.game.SumoConfig;
+import fr.olympicraft.config.model.game.MurderMysteryConfig;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -235,6 +236,23 @@ public final class Json5ConfigWriter {
         );
 
         write(path, content);
+    }
+
+    public static void writeMurderMystery(
+            Path path,
+            MurderMysteryConfig config,
+            Gson gson
+    ) throws IOException {
+        String content =
+                MurderMysteryJson5Template.create(
+                        config,
+                        gson
+                );
+
+        write(
+                path,
+                content
+        );
     }
 
     private static String quote(String value) {

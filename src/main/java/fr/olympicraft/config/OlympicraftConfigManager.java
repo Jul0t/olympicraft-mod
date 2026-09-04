@@ -7,6 +7,7 @@ import com.google.gson.JsonParseException;
 import fr.olympicraft.Olympicraft;
 import fr.olympicraft.config.model.GeneralConfig;
 import fr.olympicraft.config.model.MessageConfig;
+import fr.olympicraft.config.model.game.MurderMysteryConfig;
 import fr.olympicraft.config.model.game.SumoConfig;
 
 import java.io.IOException;
@@ -40,24 +41,36 @@ public final class OlympicraftConfigManager {
     private SumoConfig sumo =
             new SumoConfig();
 
+    private MurderMysteryConfig murderMystery =
+            new MurderMysteryConfig();
+
     private boolean loaded;
 
     public synchronized boolean loadAll() {
         try {
             createDirectories();
 
-            general = loadOrCreateGeneral();
-            messages = loadOrCreateMessages();
-            sumo = loadOrCreateSumo();
+            general =
+                    loadOrCreateGeneral();
+
+            messages =
+                    loadOrCreateMessages();
+
+            sumo =
+                    loadOrCreateSumo();
+
+            murderMystery =
+                    loadOrCreateMurderMystery();
 
             general.validate();
             messages.validate();
             sumo.validate();
+            murderMystery.validate();
 
             /*
-             * Aucun fichier existant n'est sauvegardé ici.
-             * Les commentaires JSON5 restent donc intacts
-             * pendant le démarrage et /oc config reload.
+             * Les fichiers existants ne sont pas réécrits
+             * pendant le chargement. Leurs commentaires JSON5
+             * restent donc intacts.
              */
             loaded = true;
 
@@ -88,12 +101,15 @@ public final class OlympicraftConfigManager {
             general.validate();
             messages.validate();
             sumo.validate();
+            murderMystery.validate();
 
             saveGeneral();
             saveMessages();
             saveSumo();
+            saveMurderMystery();
 
             loaded = true;
+
             return true;
         } catch (IOException exception) {
             Olympicraft.LOGGER.error(
@@ -108,7 +124,8 @@ public final class OlympicraftConfigManager {
 
     private GeneralConfig loadOrCreateGeneral()
             throws IOException {
-        Path path = ConfigPaths.general();
+        Path path =
+                ConfigPaths.general();
 
         if (Files.notExists(path)) {
             GeneralConfig defaults =
@@ -133,7 +150,8 @@ public final class OlympicraftConfigManager {
 
     private MessageConfig loadOrCreateMessages()
             throws IOException {
-        Path path = ConfigPaths.messages();
+        Path path =
+                ConfigPaths.messages();
 
         if (Files.notExists(path)) {
             MessageConfig defaults =
@@ -159,7 +177,8 @@ public final class OlympicraftConfigManager {
 
     private SumoConfig loadOrCreateSumo()
             throws IOException {
-        Path path = ConfigPaths.sumo();
+        Path path =
+                ConfigPaths.sumo();
 
         if (Files.notExists(path)) {
             SumoConfig defaults =
@@ -180,6 +199,35 @@ public final class OlympicraftConfigManager {
                 path,
                 SumoConfig.class,
                 new SumoConfig()
+        );
+    }
+
+    private MurderMysteryConfig
+    loadOrCreateMurderMystery()
+            throws IOException {
+        Path path =
+                ConfigPaths.murderMystery();
+
+        if (Files.notExists(path)) {
+            MurderMysteryConfig defaults =
+                    new MurderMysteryConfig();
+
+            defaults.validate();
+
+            Json5ConfigWriter
+                    .writeMurderMystery(
+                            path,
+                            defaults,
+                            gson
+                    );
+
+            return defaults;
+        }
+
+        return load(
+                path,
+                MurderMysteryConfig.class,
+                new MurderMysteryConfig()
         );
     }
 
@@ -205,13 +253,15 @@ public final class OlympicraftConfigManager {
             }
 
             loadedConfig.validate();
+
             return loadedConfig;
         }
     }
 
     private void saveGeneral()
             throws IOException {
-        Path path = ConfigPaths.general();
+        Path path =
+                ConfigPaths.general();
 
         backupIfEnabled(path);
 
@@ -223,7 +273,8 @@ public final class OlympicraftConfigManager {
 
     private void saveMessages()
             throws IOException {
-        Path path = ConfigPaths.messages();
+        Path path =
+                ConfigPaths.messages();
 
         backupIfEnabled(path);
 
@@ -236,13 +287,28 @@ public final class OlympicraftConfigManager {
 
     private void saveSumo()
             throws IOException {
-        Path path = ConfigPaths.sumo();
+        Path path =
+                ConfigPaths.sumo();
 
         backupIfEnabled(path);
 
         Json5ConfigWriter.writeSumo(
                 path,
                 sumo,
+                gson
+        );
+    }
+
+    private void saveMurderMystery()
+            throws IOException {
+        Path path =
+                ConfigPaths.murderMystery();
+
+        backupIfEnabled(path);
+
+        Json5ConfigWriter.writeMurderMystery(
+                path,
+                murderMystery,
                 gson
         );
     }
@@ -271,11 +337,13 @@ public final class OlympicraftConfigManager {
         );
 
         Files.createDirectories(
-                ConfigPaths.pendingPlayerSnapshots()
+                ConfigPaths
+                        .pendingPlayerSnapshots()
         );
 
         Files.createDirectories(
-                ConfigPaths.playerSnapshotArchives()
+                ConfigPaths
+                        .playerSnapshotArchives()
         );
     }
 
@@ -373,6 +441,10 @@ public final class OlympicraftConfigManager {
 
     public SumoConfig sumo() {
         return sumo;
+    }
+
+    public MurderMysteryConfig murderMystery() {
+        return murderMystery;
     }
 
     public boolean isLoaded() {

@@ -12,6 +12,8 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 
+import java.util.List;
+
 public final class MurderMysteryChatService {
 
     private boolean registered;
@@ -20,12 +22,13 @@ public final class MurderMysteryChatService {
         if (registered) {
             return;
         }
-
+        dictionary.load();
         registered = true;
 
         ServerMessageEvents.ALLOW_CHAT_MESSAGE.register(
                 (message, sender, parameters) ->
                         handleChatMessage(
+                                message.signedContent(),
                                 message.decoratedContent(),
                                 sender
                         )
@@ -40,6 +43,7 @@ public final class MurderMysteryChatService {
      * chat de proximité du Murder Mystery.
      */
     private boolean handleChatMessage(
+            String rawContent,
             Component content,
             ServerPlayer sender
     ) {
@@ -82,6 +86,30 @@ public final class MurderMysteryChatService {
          */
         if (senderParticipant == null) {
             return true;
+        }
+
+        List<MurderMysterySensitiveNames.SensitiveName>
+                sensitiveNames =
+                MurderMysterySensitiveNames.collect(
+                        sender.getServer(),
+                        dictionary
+                );
+
+        if (nameFilter.containsForbiddenName(
+                rawContent,
+                sensitiveNames
+        )) {
+            sender.sendSystemMessage(
+                    Component.literal(
+                            "[Olympicraft] Ton message peut révéler "
+                                    + "l'identité réelle d'un joueur. "
+                                    + "Utilise uniquement les alias."
+                    ).withStyle(
+                            ChatFormatting.RED
+                    )
+            );
+
+            return false;
         }
 
         Component formattedMessage =
@@ -273,4 +301,9 @@ public final class MurderMysteryChatService {
                                 )
                 );
     }
+    private final MurderMysteryDictionary dictionary =
+            new MurderMysteryDictionary();
+
+    private final MurderMysteryNameFilter nameFilter =
+            new MurderMysteryNameFilter();
 }

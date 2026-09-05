@@ -6,6 +6,7 @@ import fr.olympicraft.arena.ArenaPosition;
 import fr.olympicraft.game.murder.identity.MurderMysteryAliasAllocator;
 import fr.olympicraft.game.murder.role.MurderMysteryRole;
 import fr.olympicraft.game.murder.role.MurderMysteryRoleAllocator;
+import fr.olympicraft.game.murder.scoreboard.MurderMysteryScoreboardService;
 import fr.olympicraft.match.GameInstance;
 import fr.olympicraft.match.GameParticipant;
 import fr.olympicraft.match.runtime.GameRuntime;
@@ -48,6 +49,10 @@ public final class MurderMysteryRuntime
 
     private final MurderMysteryIdentityService
             identityService;
+
+    private final MurderMysteryScoreboardService
+            scoreboardService =
+            new MurderMysteryScoreboardService();
 
     private final Map<
             UUID,
@@ -295,6 +300,13 @@ public final class MurderMysteryRuntime
 
         sendPrivateRoles();
 
+        scoreboardService.showAll(
+                instance,
+                participants,
+                remainingSeconds(),
+                preparationActive()
+        );
+
         instance.broadcast(
                 Component.literal(
                         "L'enquête commence. "
@@ -328,6 +340,13 @@ public final class MurderMysteryRuntime
         }
 
         roundTicks++;
+
+        scoreboardService.updateIfNeeded(
+                instance,
+                participants,
+                remainingSeconds(),
+                preparationActive()
+        );
 
         if (preparationTicks > 0) {
             preparationTicks--;
@@ -426,11 +445,31 @@ public final class MurderMysteryRuntime
             GameInstance instance,
             UUID playerId
     ) {
+        if (playerId == null) {
+            return;
+        }
+
         MurderMysteryParticipant participant =
                 participants.get(playerId);
 
         if (participant != null) {
             participant.disconnected(true);
+        }
+
+        /*
+         * Lors d'un /oc game leave, le joueur est encore connecté.
+         * On peut donc retirer immédiatement son scoreboard.
+         *
+         * Lors d'une véritable déconnexion, le joueur peut déjà être
+         * absent de la liste : le scoreboard disparaît naturellement
+         * lorsque le client quitte le serveur.
+         */
+        ServerPlayer player =
+                server.getPlayerList()
+                        .getPlayer(playerId);
+
+        if (player != null) {
+            scoreboardService.hide(player);
         }
     }
 
@@ -438,6 +477,7 @@ public final class MurderMysteryRuntime
     public void onCountdownCancelled(
             GameInstance instance
     ) {
+        scoreboardService.hideAll(instance);
         identityService.restoreAll();
         clearRuntimeState();
     }
@@ -446,6 +486,7 @@ public final class MurderMysteryRuntime
     public void onEnding(
             GameInstance instance
     ) {
+        scoreboardService.hideAll(instance);
         revealMurderers(instance);
         identityService.restoreAll();
     }
@@ -454,6 +495,7 @@ public final class MurderMysteryRuntime
     public void onReset(
             GameInstance instance
     ) {
+        scoreboardService.hideAll(instance);
         identityService.restoreAll();
         clearRuntimeState();
     }
@@ -462,6 +504,7 @@ public final class MurderMysteryRuntime
     public void onShutdown(
             GameInstance instance
     ) {
+        scoreboardService.hideAll(instance);
         identityService.restoreAll();
         clearRuntimeState();
     }

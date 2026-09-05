@@ -7,6 +7,7 @@ import fr.olympicraft.match.runtime.GameRuntimeRegistry;
 import fr.olympicraft.test.TestModeManager;
 import fr.olympicraft.test.dummy.DummyManager;
 import fr.olympicraft.test.dummy.DummyParticipant;
+import fr.olympicraft.gui.GuiSession;
 
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
@@ -83,6 +84,10 @@ public final class GameInstanceManager {
                 instances.get(arena.id)
         );
     }
+
+    private final Map<UUID, PendingReconnectMenu>
+            pendingReconnectMenus =
+            new LinkedHashMap<>();
 
     public Optional<GameInstance> findByPlayer(
             UUID playerId
@@ -325,6 +330,8 @@ public final class GameInstanceManager {
             }
         }
 
+        tickPendingReconnectMenus();
+
         /*
          * Deuxième étape :
          * retirer d'abord les parties terminées de la liste.
@@ -361,11 +368,32 @@ public final class GameInstanceManager {
             return;
         }
 
+        pendingReconnectMenus.remove(
+                player.getUUID()
+        );
+
         GameInstance instance =
-                findByPlayer(player.getUUID())
-                        .orElse(null);
+                findByPlayer(
+                        player.getUUID()
+                ).orElse(null);
 
         if (instance == null) {
+            return;
+        }
+
+        /*
+         * Certains jeux, comme le Murder Mystery, conservent
+         * temporairement le participant afin de lui permettre
+         * de reprendre sa partie.
+         */
+        boolean retained =
+                instance.runtime()
+                        .onPlayerDisconnected(
+                                instance,
+                                player
+                        );
+
+        if (retained) {
             return;
         }
 
@@ -373,10 +401,6 @@ public final class GameInstanceManager {
                 player.getUUID()
         );
 
-        /*
-         * La déconnexion empêche une restauration immédiate.
-         * Le snapshot reste disponible pour la prochaine connexion.
-         */
         matchPlayers.markForRestore(
                 player.getUUID()
         );
@@ -391,19 +415,69 @@ public final class GameInstanceManager {
             return;
         }
 
-        if (!matchPlayers.shouldRestore(
-                player.getUUID()
-        )) {
-            return;
-        }
-
-        /*
-         * L'événement JOIN intervient très tôt.
-         * La restauration est donc reportée dans la file du serveur.
-         */
         player.getServer().execute(() -> {
+            GameInstance reconnectInstance =
+                    findByPlayer(
+                            player.getUUID()
+                    ).orElse(null);
+
+            if (reconnectInstance != null
+                    && reconnectInstance.runtime()
+                    instanceof fr.olympicraft.game.murder
+                    .MurderMysteryRuntime runtime
+                    && runtime.canReconnect(
+                    player.getUUID()
+            )) {
+                if (!runtime.prepareReconnectDecision(
+                        reconnectInstance,
+                        player
+                )) {
+                    player.sendSystemMessage(
+                            Component.literal(
+                                    "[Olympicraft] Impossible de préparer "
+                                            + "la reprise de la partie."
+                            )
+                    );
+
+                    return;
+                }
+
+                if (fr.olympicraft.Olympicraft
+                        .configs()
+                        .murderMystery()
+                        .reconnection
+                        .showReconnectMenu) {
+
+                    pendingReconnectMenus.put(
+                            player.getUUID(),
+                            pendingReconnectMenus.put(
+                                    player.getUUID(),
+                                    new PendingReconnectMenu(
+                                            reconnectInstance.arena().id,
+                                            40,
+                                            0
+                                    )
+                            ));
+                } else {
+                    acceptMurderMysteryReconnect(
+                            player,
+                            reconnectInstance.arena().id
+                    );
+                }
+
+                return;
+            }
+
+            if (!matchPlayers.shouldRestore(
+                    player.getUUID()
+            )) {
+                return;
+            }
+
             var result =
-                    matchPlayers.restorePending(player);
+                    matchPlayers.restorePending(
+                            player
+                    );
 
             if (result.successful()) {
                 player.sendSystemMessage(
@@ -433,6 +507,8 @@ public final class GameInstanceManager {
             restoreInstancePlayers(instance);
             instance.shutdown();
         }
+
+        pendingReconnectMenus.clear();
 
         /*
          * Les dummies n'ont aucun snapshot à restaurer.
@@ -862,6 +938,402 @@ public final class GameInstanceManager {
                     false,
                     error,
                     null
+            );
+        }
+    }
+    public ReconnectResult acceptMurderMysteryReconnect(
+            ServerPlayer player,
+            String arenaInput
+    ) {
+        if (player == null) {
+            return ReconnectResult.failure(
+                    "Joueur introuvable."
+            );
+        }
+
+        GameInstance instance =
+                findByArena(
+                        arenaInput
+                ).orElse(null);
+
+        if (instance == null
+                || !(instance.runtime()
+                instanceof fr.olympicraft.game.murder
+                .MurderMysteryRuntime runtime)) {
+            return ReconnectResult.failure(
+                    "La partie n'existe plus."
+            );
+        }
+
+        if (!runtime.canReconnect(
+                player.getUUID()
+        )) {
+            return ReconnectResult.failure(
+                    "Le délai de reconnexion est expiré."
+            );
+        }
+
+        if (!runtime.onPlayerReconnected(
+                instance,
+                player
+        )) {
+            return ReconnectResult.failure(
+                    "La réintégration a échoué."
+            );
+        }
+
+        return ReconnectResult.success(
+                "Tu as réintégré la partie."
+        );
+    }
+
+    public ReconnectResult declineMurderMysteryReconnect(
+            ServerPlayer player,
+            String arenaInput
+    ) {
+        if (player == null) {
+            return ReconnectResult.failure(
+                    "Joueur introuvable."
+            );
+        }
+
+        GameInstance instance =
+                findByArena(
+                        arenaInput
+                ).orElse(null);
+
+        if (instance == null
+                || !(instance.runtime()
+                instanceof fr.olympicraft.game.murder
+                .MurderMysteryRuntime runtime)) {
+            return ReconnectResult.failure(
+                    "La partie n'existe plus."
+            );
+        }
+
+        if (!runtime.canReconnect(
+                player.getUUID()
+        )) {
+            return ReconnectResult.failure(
+                    "Aucune reconnexion n'est en attente."
+            );
+        }
+
+        /*
+         * Enregistre d'abord le forfait et vérifie si celui-ci
+         * provoque la fin de la partie.
+         */
+        runtime.cancelReconnect(
+                instance,
+                player,
+                "Reconnexion refusée."
+        );
+
+        /*
+         * Retire ensuite l'inscription générale.
+         *
+         * Le rôle reste dans l'historique interne du runtime,
+         * mais le joueur n'est plus membre de GameInstance.
+         */
+        instance.remove(
+                player.getUUID()
+        );
+
+        PlayerMatchService.ExitResult restored =
+                matchPlayers.exit(player);
+
+        if (!restored.successful()) {
+            matchPlayers.markForRestore(
+                    player.getUUID()
+            );
+
+            return ReconnectResult.failure(
+                    "Forfait enregistré, mais ton état "
+                            + "n'a pas pu être restauré : "
+                            + restored.error()
+            );
+        }
+
+        removeIfEmpty(instance);
+
+        return ReconnectResult.success(
+                "Tu as abandonné la partie."
+        );
+    }
+
+    public record ReconnectResult(
+            boolean successful,
+            String message
+    ) {
+        public static ReconnectResult success(
+                String message
+        ) {
+            return new ReconnectResult(
+                    true,
+                    message
+            );
+        }
+
+        public static ReconnectResult failure(
+                String message
+        ) {
+            return new ReconnectResult(
+                    false,
+                    message
+            );
+        }
+    }
+    public ReconnectResult simulateMurderMysteryDisconnect(
+            ServerPlayer player
+    ) {
+        if (player == null) {
+            return ReconnectResult.failure(
+                    "Joueur introuvable."
+            );
+        }
+
+        GameInstance instance =
+                findByPlayer(
+                        player.getUUID()
+                ).orElse(null);
+
+        if (instance == null
+                || !(instance.runtime()
+                instanceof fr.olympicraft.game.murder
+                .MurderMysteryRuntime runtime)) {
+            return ReconnectResult.failure(
+                    "Tu n'es pas dans un Murder Mystery."
+            );
+        }
+
+        if (!runtime.onPlayerDisconnected(
+                instance,
+                player
+        )) {
+            return ReconnectResult.failure(
+                    "La déconnexion simulée a échoué."
+            );
+        }
+
+        player.getServer().execute(() ->
+                fr.olympicraft.Olympicraft
+                        .gui()
+                        .open(
+                                player,
+                                new fr.olympicraft.gui.menu.murder
+                                        .MurderMysteryReconnectMenu(
+                                        instance.arena().id,
+                                        player.getUUID()
+                                )
+                        )
+        );
+
+        return ReconnectResult.success(
+                "Déconnexion simulée."
+        );
+    }
+    private void scheduleReconnectMenu(
+            ServerPlayer player,
+            String arenaId,
+            int remainingTicks
+    ) {
+        if (player == null
+                || player.getServer() == null) {
+            return;
+        }
+
+        player.getServer().execute(() -> {
+            /*
+             * execute() seul reporte d'un passage dans la file,
+             * mais pas forcément de 20 ticks.
+             *
+             * Cette méthode se rappelle donc une fois par tick.
+             */
+            if (remainingTicks > 0) {
+                scheduleReconnectMenu(
+                        player,
+                        arenaId,
+                        remainingTicks - 1
+                );
+
+                return;
+            }
+
+            /*
+             * Le joueur peut s'être déconnecté une nouvelle fois
+             * pendant le délai.
+             */
+            ServerPlayer onlinePlayer =
+                    server == null
+                            ? null
+                            : server.getPlayerList()
+                            .getPlayer(
+                                    player.getUUID()
+                            );
+
+            if (onlinePlayer == null) {
+                return;
+            }
+
+            GameInstance currentInstance =
+                    findByArena(
+                            arenaId
+                    ).orElse(null);
+
+            if (currentInstance == null
+                    || !(currentInstance.runtime()
+                    instanceof fr.olympicraft.game.murder
+                    .MurderMysteryRuntime runtime)
+                    || !runtime.canReconnect(
+                    onlinePlayer.getUUID()
+            )) {
+                return;
+            }
+
+            runtime.reconnectPromptShown(
+                    onlinePlayer.getUUID()
+            );
+
+            fr.olympicraft.Olympicraft
+                    .gui()
+                    .open(
+                            onlinePlayer,
+                            new fr.olympicraft.gui.menu.murder
+                                    .MurderMysteryReconnectMenu(
+                                    arenaId,
+                                    onlinePlayer.getUUID()
+                            )
+                    );
+        });
+    }
+    private record PendingReconnectMenu(
+            String arenaId,
+            int ticksRemaining,
+            int openAttempts
+    ) {
+    }
+    private void tickPendingReconnectMenus() {
+        if (server == null
+                || pendingReconnectMenus.isEmpty()) {
+            return;
+        }
+
+        List<UUID> completed =
+                new ArrayList<>();
+
+        List<Map.Entry<UUID, PendingReconnectMenu>> entries =
+                new ArrayList<>(
+                        pendingReconnectMenus.entrySet()
+                );
+
+        for (Map.Entry<UUID, PendingReconnectMenu> entry :
+                entries) {
+            UUID playerId =
+                    entry.getKey();
+
+            PendingReconnectMenu pending =
+                    entry.getValue();
+
+            ServerPlayer player =
+                    server.getPlayerList()
+                            .getPlayer(playerId);
+
+            if (player == null
+                    || player.connection == null) {
+                completed.add(playerId);
+                continue;
+            }
+
+            int nextTicks =
+                    pending.ticksRemaining() - 1;
+
+            if (nextTicks > 0) {
+                pendingReconnectMenus.put(
+                        playerId,
+                        new PendingReconnectMenu(
+                                pending.arenaId(),
+                                nextTicks,
+                                pending.openAttempts()
+                        )
+                );
+
+                continue;
+            }
+
+            GameInstance instance =
+                    findByArena(
+                            pending.arenaId()
+                    ).orElse(null);
+
+            if (instance == null
+                    || !(instance.runtime()
+                    instanceof fr.olympicraft.game.murder
+                    .MurderMysteryRuntime runtime)
+                    || !runtime.canReconnect(playerId)) {
+                completed.add(playerId);
+                continue;
+            }
+
+            /*
+             * Ferme le menu d'inventaire encore présent après
+             * la connexion avant d'ouvrir le nôtre.
+             */
+            player.closeContainer();
+
+            fr.olympicraft.Olympicraft
+                    .gui()
+                    .open(
+                            player,
+                            new fr.olympicraft.gui.menu.murder
+                                    .MurderMysteryReconnectMenu(
+                                    pending.arenaId(),
+                                    playerId
+                            )
+                    );
+
+            GuiSession session =
+                    fr.olympicraft.Olympicraft
+                            .gui()
+                            .session(playerId);
+
+            boolean active =
+                    fr.olympicraft.Olympicraft
+                            .gui()
+                            .hasActiveMenu(
+                                    player,
+                                    session
+                            );
+
+            /*
+             * Si le menu a été remplacé par un paquet tardif de
+             * connexion, nous retentons son ouverture dans 10 ticks.
+             */
+            if (!active
+                    && pending.openAttempts() < 3) {
+                pendingReconnectMenus.put(
+                        playerId,
+                        new PendingReconnectMenu(
+                                pending.arenaId(),
+                                10,
+                                pending.openAttempts() + 1
+                        )
+                );
+
+                continue;
+            }
+
+            if (active) {
+                runtime.reconnectPromptShown(
+                        playerId
+                );
+            }
+
+            completed.add(playerId);
+        }
+
+        for (UUID playerId : completed) {
+            pendingReconnectMenus.remove(
+                    playerId
             );
         }
     }

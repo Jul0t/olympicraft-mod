@@ -217,4 +217,21 @@ public final class GuiManager {
                 session.menu()
         );
     }
+    public boolean hasActiveMenu(
+            ServerPlayer player,
+            GuiSession expectedSession
+    ) {
+        if (player == null
+                || expectedSession == null) {
+            return false;
+        }
+
+        if (!(player.containerMenu
+                instanceof GuiScreenHandler handler)) {
+            return false;
+        }
+
+        return handler.session()
+                == expectedSession;
+    }
 }

@@ -26,8 +26,7 @@
   ]
 },
 	"mixins": [
-		"olympicraft.common.mixins.json",
-		"olympicraft.client.mixins.json"
+		"olympicraft.common.mixins.json"
 	],
 	"depends": {
 		"fabricloader": ">=0.19.3",

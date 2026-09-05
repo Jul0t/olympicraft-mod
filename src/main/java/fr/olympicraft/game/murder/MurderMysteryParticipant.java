@@ -25,11 +25,21 @@ public final class MurderMysteryParticipant {
 
     private boolean disconnected;
 
+    private int disconnectCount;
+
+    private long reconnectDeadlineMillis;
+
+    private boolean reconnectPromptPending;
+
+    private boolean forfeited;
+
     private boolean killedInnocent;
 
     private boolean killedDetective;
 
     private boolean killedMurderer;
+
+    private boolean reconnectDecisionPending;
 
     public MurderMysteryParticipant(
             UUID participantId,
@@ -148,6 +158,82 @@ public final class MurderMysteryParticipant {
         this.disconnected = disconnected;
     }
 
+    public int disconnectCount() {
+        return disconnectCount;
+    }
+
+    public void incrementDisconnectCount() {
+        disconnectCount++;
+    }
+
+    public long reconnectDeadlineMillis() {
+        return reconnectDeadlineMillis;
+    }
+
+    public void reconnectDeadlineMillis(
+            long reconnectDeadlineMillis
+    ) {
+        this.reconnectDeadlineMillis =
+                Math.max(
+                        0L,
+                        reconnectDeadlineMillis
+                );
+    }
+
+    public boolean reconnectPromptPending() {
+        return reconnectPromptPending;
+    }
+
+    public void reconnectPromptPending(
+            boolean reconnectPromptPending
+    ) {
+        this.reconnectPromptPending =
+                reconnectPromptPending;
+    }
+
+    public boolean forfeited() {
+        return forfeited;
+    }
+
+    public void forfeited(
+            boolean forfeited
+    ) {
+        this.forfeited = forfeited;
+    }
+
+    public boolean reconnectExpired() {
+        return disconnected
+                && reconnectDeadlineMillis > 0L
+                && System.currentTimeMillis()
+                >= reconnectDeadlineMillis;
+    }
+
+    public int reconnectSecondsRemaining() {
+        if (!disconnected
+                || reconnectDeadlineMillis <= 0L) {
+            return 0;
+        }
+
+        long remainingMillis =
+                reconnectDeadlineMillis
+                        - System.currentTimeMillis();
+
+        if (remainingMillis <= 0L) {
+            return 0;
+        }
+
+        return (int) Math.ceil(
+                remainingMillis / 1000.0D
+        );
+    }
+
+    public void clearReconnectState() {
+        disconnected = false;
+        reconnectDeadlineMillis = 0L;
+        reconnectPromptPending = false;
+        reconnectDecisionPending = false;
+    }
+
     public boolean killedInnocent() {
         return killedInnocent;
     }
@@ -186,5 +272,15 @@ public final class MurderMysteryParticipant {
         return killedInnocent
                 && killedDetective
                 && killedMurderer;
+    }
+    public boolean reconnectDecisionPending() {
+        return reconnectDecisionPending;
+    }
+
+    public void reconnectDecisionPending(
+            boolean reconnectDecisionPending
+    ) {
+        this.reconnectDecisionPending =
+                reconnectDecisionPending;
     }
 }

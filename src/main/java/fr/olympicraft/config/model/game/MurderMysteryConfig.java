@@ -47,6 +47,9 @@ public final class MurderMysteryConfig
     public Troublemaker troublemaker =
             new Troublemaker();
 
+    public Reconnection reconnection =
+            new Reconnection();
+
     public Ranked ranked =
             new Ranked();
 
@@ -394,6 +397,43 @@ public final class MurderMysteryConfig
     }
 
     ///////////////////////
+    // Reconnexion       //
+    ///////////////////////
+
+    public static final class Reconnection {
+
+        public boolean enabled = true;
+
+        /*
+         * La première déconnexion autorise une reconnexion.
+         * La deuxième provoque un forfait immédiat.
+         */
+        public int maximumDisconnects = 2;
+
+        public int innocentGraceSeconds = 300;
+
+        public int detectiveGraceSeconds = 90;
+
+        public int murdererGraceSeconds = 60;
+
+        public int troublemakerGraceSeconds = 120;
+
+        /*
+         * Délai utilisé par la simulation en mode test.
+         */
+        public int testGraceSeconds = 15;
+
+        public boolean showReconnectMenu = true;
+
+        /*
+         * Récompense d'une équipe gagnant parce que le rôle
+         * adverse décisif a abandonné.
+         */
+        public float disconnectVictoryMultiplier =
+                0.3333F;
+    }
+
+    ///////////////////////
     // Ranked            //
     ///////////////////////
 
@@ -637,6 +677,10 @@ public final class MurderMysteryConfig
 
         anonymity.aliases = aliases;
 
+        reconnection = reconnection == null
+                ? new Reconnection()
+                : reconnection;
+
         proximityChat.horizontalRange =
                 Math.clamp(
                         proximityChat.horizontalRange,
@@ -793,6 +837,54 @@ public final class MurderMysteryConfig
                         ranked.minimumRealPlayers,
                         2,
                         64
+                );
+        reconnection.maximumDisconnects =
+                Math.clamp(
+                        reconnection.maximumDisconnects,
+                        1,
+                        10
+                );
+
+        reconnection.innocentGraceSeconds =
+                Math.clamp(
+                        reconnection.innocentGraceSeconds,
+                        5,
+                        1800
+                );
+
+        reconnection.detectiveGraceSeconds =
+                Math.clamp(
+                        reconnection.detectiveGraceSeconds,
+                        5,
+                        1800
+                );
+
+        reconnection.murdererGraceSeconds =
+                Math.clamp(
+                        reconnection.murdererGraceSeconds,
+                        5,
+                        1800
+                );
+
+        reconnection.troublemakerGraceSeconds =
+                Math.clamp(
+                        reconnection.troublemakerGraceSeconds,
+                        5,
+                        1800
+                );
+
+        reconnection.testGraceSeconds =
+                Math.clamp(
+                        reconnection.testGraceSeconds,
+                        3,
+                        300
+                );
+
+        reconnection.disconnectVictoryMultiplier =
+                Math.clamp(
+                        reconnection.disconnectVictoryMultiplier,
+                        0.0F,
+                        1.0F
                 );
     }
 

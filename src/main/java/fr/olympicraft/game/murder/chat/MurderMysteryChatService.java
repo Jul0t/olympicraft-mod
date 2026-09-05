@@ -88,6 +88,19 @@ public final class MurderMysteryChatService {
             return true;
         }
 
+        /*
+         * Un joueur revenu sur le serveur n'est pas encore réellement
+         * revenu dans la partie tant qu'il n'a pas validé le GUI.
+         *
+         * Son rôle et son alias restent réservés, mais son chat redevient
+         * normal pendant l'attente.
+         */
+        if (senderParticipant.disconnected()
+                || senderParticipant.forfeited()
+                || !senderParticipant.alive()) {
+            return true;
+        }
+
         List<MurderMysterySensitiveNames.SensitiveName>
                 sensitiveNames =
                 MurderMysterySensitiveNames.collect(
@@ -185,6 +198,15 @@ public final class MurderMysteryChatService {
          * participants du Murder Mystery reçoivent ce chat.
          */
         if (recipientParticipant == null) {
+            return false;
+        }
+
+        /*
+         * Un joueur en attente de reconnexion ne participe pas encore
+         * au canal de proximité.
+         */
+        if (recipientParticipant.disconnected()
+                || recipientParticipant.forfeited()) {
             return false;
         }
 

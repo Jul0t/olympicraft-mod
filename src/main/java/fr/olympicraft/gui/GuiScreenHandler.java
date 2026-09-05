@@ -85,6 +85,15 @@ public final class GuiScreenHandler extends ChestMenu {
 
             actionRunning = true;
 
+            fr.olympicraft.Olympicraft.LOGGER.info(
+                    "Clic GUI reçu : joueur={}, menu={}, slot={}",
+                    serverPlayer.getGameProfile().getName(),
+                    session.menu()
+                            .getClass()
+                            .getSimpleName(),
+                    slotId
+            );
+
             try {
                 action.execute(
                         serverPlayer,
@@ -133,5 +142,8 @@ public final class GuiScreenHandler extends ChestMenu {
                     session
             );
         }
+    }
+    public GuiSession session() {
+        return session;
     }
 }

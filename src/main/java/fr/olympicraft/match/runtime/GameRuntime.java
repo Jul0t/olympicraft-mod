@@ -27,6 +27,30 @@ public interface GameRuntime {
     ) {
     }
 
+    /*
+     * Retourne true lorsque le runtime conserve le joueur
+     * après sa déconnexion.
+     *
+     * Dans ce cas, GameInstanceManager ne retire pas le
+     * GameParticipant de l'instance.
+     */
+    default boolean onPlayerDisconnected(
+            GameInstance instance,
+            ServerPlayer player
+    ) {
+        return false;
+    }
+
+    /*
+     * Appelée lorsqu'un joueur accepte de reprendre une partie.
+     */
+    default boolean onPlayerReconnected(
+            GameInstance instance,
+            ServerPlayer player
+    ) {
+        return false;
+    }
+
     default boolean canStart(
             GameInstance instance
     ) {

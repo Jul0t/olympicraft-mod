@@ -7,6 +7,8 @@ import fr.olympicraft.game.murder.identity.MurderMysteryAliasAllocator;
 import fr.olympicraft.game.murder.role.MurderMysteryRole;
 import fr.olympicraft.game.murder.role.MurderMysteryRoleAllocator;
 import fr.olympicraft.game.murder.scoreboard.MurderMysteryScoreboardService;
+import fr.olympicraft.game.murder.reconnect.MurderMysteryDisconnectResult;
+import fr.olympicraft.match.GameState;
 import fr.olympicraft.match.GameInstance;
 import fr.olympicraft.match.GameParticipant;
 import fr.olympicraft.match.runtime.GameRuntime;
@@ -91,6 +93,71 @@ public final class MurderMysteryRuntime
                         Olympicraft.configs()
                                 .murderMystery()
                 );
+    }
+
+    public boolean canReconnect(
+            UUID playerId
+    ) {
+        MurderMysteryParticipant participant =
+                participants.get(playerId);
+
+        return participant != null
+                && participant.alive()
+                && participant.disconnected()
+                && !participant.forfeited()
+                && !participant.reconnectExpired();
+    }
+
+    public int reconnectSecondsRemaining(
+            UUID playerId
+    ) {
+        MurderMysteryParticipant participant =
+                participants.get(playerId);
+
+        return participant == null
+                ? 0
+                : participant
+                .reconnectSecondsRemaining();
+    }
+
+    public boolean reconnectPromptPending(
+            UUID playerId
+    ) {
+        MurderMysteryParticipant participant =
+                participants.get(playerId);
+
+        return participant != null
+                && participant.reconnectPromptPending()
+                && canReconnect(playerId);
+    }
+
+    public void reconnectPromptShown(
+            UUID playerId
+    ) {
+        MurderMysteryParticipant participant =
+                participants.get(playerId);
+
+        if (participant != null) {
+            participant.reconnectPromptPending(
+                    false
+            );
+        }
+    }
+
+    public String disconnectEndReason() {
+        return disconnectEndReason;
+    }
+
+    public float disconnectRankedMultiplier() {
+        return disconnectRankedMultiplier;
+    }
+
+    public UUID decisiveDisconnectedPlayerId() {
+        return decisiveDisconnectedPlayerId;
+    }
+
+    public MurderMysteryRole decisiveDisconnectedRole() {
+        return decisiveDisconnectedRole;
     }
 
     @Override
@@ -341,6 +408,12 @@ public final class MurderMysteryRuntime
 
         roundTicks++;
 
+        tickReconnectDeadlines(instance);
+
+        if (finished) {
+            return;
+        }
+
         scoreboardService.updateIfNeeded(
                 instance,
                 participants,
@@ -418,6 +491,191 @@ public final class MurderMysteryRuntime
     }
 
     @Override
+    public boolean onPlayerDisconnected(
+            GameInstance instance,
+            ServerPlayer player
+    ) {
+        if (player == null
+                || !settings.config()
+                .reconnection
+                .enabled) {
+            return false;
+        }
+
+        if (instance.state()
+                != GameState.STARTING
+                && instance.state()
+                != GameState.RUNNING) {
+            return false;
+        }
+
+        MurderMysteryParticipant participant =
+                participants.get(
+                        player.getUUID()
+                );
+
+        if (participant == null
+                || participant.dummy()
+                || !participant.alive()) {
+            return false;
+        }
+
+        participant.incrementDisconnectCount();
+
+        if (participant.disconnectCount()
+                >= settings.config()
+                .reconnection
+                .maximumDisconnects) {
+            applyForfeit(
+                    instance,
+                    participant,
+                    "Forfait après plusieurs déconnexions."
+            );
+
+            return true;
+        }
+
+        int graceSeconds =
+                graceSeconds(
+                        participant.role()
+                );
+
+        participant.disconnected(true);
+
+        participant.reconnectDecisionPending(
+                false
+        );
+
+        participant.reconnectDeadlineMillis(
+                System.currentTimeMillis()
+                        + graceSeconds * 1000L
+        );
+
+        participant.reconnectPromptPending(true);
+
+        /*
+         * Le scoreboard disparaît de lui-même côté client lors de
+         * la déconnexion. Le participant logique reste dans la partie.
+         */
+        instance.broadcast(
+                Component.literal(
+                        participant.alias()
+                                + " est temporairement absent."
+                ).withStyle(
+                        ChatFormatting.YELLOW
+                )
+        );
+
+        return true;
+    }
+
+    @Override
+    public boolean onPlayerReconnected(
+            GameInstance instance,
+            ServerPlayer player
+    ) {
+        if (player == null
+                || !canReconnect(
+                player.getUUID()
+        )) {
+            return false;
+        }
+
+        MurderMysteryParticipant participant =
+                participants.get(
+                        player.getUUID()
+                );
+
+        participant.clearReconnectState();
+
+        /*
+         * On réapplique la préparation de partie sans modifier
+         * le rôle, l'alias ou la progression.
+         */
+        player.closeContainer();
+
+        player.setGameMode(
+                GameType.ADVENTURE
+        );
+
+        player.getInventory()
+                .clearContent();
+
+        player.getInventory()
+                .setChanged();
+
+        player.setHealth(
+                Math.max(
+                        1.0F,
+                        player.getMaxHealth()
+                                - participant.wounds()
+                                * 4.0F
+                )
+        );
+
+        player.getFoodData()
+                .setFoodLevel(20);
+
+        player.getFoodData()
+                .setSaturation(5.0F);
+
+        player.setRemainingFireTicks(0);
+        player.fallDistance = 0.0F;
+
+        /*
+         * Tant que les cadavres ne sont pas implémentés, la reprise
+         * se fait au point spectateur, qui sert de position sûre.
+         */
+        if (arena.spectator != null) {
+            arena.spectator.teleport(
+                    server,
+                    player
+            );
+        }
+
+        if (!participant.reconnectDecisionPending()) {
+            return false;
+        }
+
+        identityService.apply(
+                participant
+        );
+
+        player.inventoryMenu
+                .broadcastChanges();
+
+        scoreboardService.show(
+                player,
+                participant,
+                remainingSeconds(),
+                preparationActive()
+        );
+
+        player.sendSystemMessage(
+                Component.literal(
+                        "Tu as réintégré la partie avec "
+                                + "l'identité "
+                                + participant.alias()
+                                + "."
+                ).withStyle(
+                        ChatFormatting.GREEN
+                )
+        );
+
+        player.sendSystemMessage(
+                Component.literal(
+                        "Attention : une nouvelle déconnexion "
+                                + "provoquera un forfait immédiat."
+                ).withStyle(
+                        ChatFormatting.RED,
+                        ChatFormatting.BOLD
+                )
+        );
+
+        return true;
+    }
+
+    @Override
     public boolean preventsDamage(
             GameInstance instance,
             ServerPlayer player,
@@ -450,27 +708,47 @@ public final class MurderMysteryRuntime
         }
 
         MurderMysteryParticipant participant =
-                participants.get(playerId);
+                participants.get(
+                        playerId
+                );
 
-        if (participant != null) {
-            participant.disconnected(true);
+        if (participant == null) {
+            return;
         }
 
-        /*
-         * Lors d'un /oc game leave, le joueur est encore connecté.
-         * On peut donc retirer immédiatement son scoreboard.
-         *
-         * Lors d'une véritable déconnexion, le joueur peut déjà être
-         * absent de la liste : le scoreboard disparaît naturellement
-         * lorsque le client quitte le serveur.
-         */
         ServerPlayer player =
                 server.getPlayerList()
-                        .getPlayer(playerId);
+                        .getPlayer(
+                                playerId
+                        );
 
         if (player != null) {
             scoreboardService.hide(player);
         }
+
+        /*
+         * Un joueur forfait ou éliminé est retiré définitivement.
+         * Il ne doit pas redevenir "déconnecté" après l'appel
+         * à instance.remove().
+         */
+        if (participant.forfeited()
+                || !participant.alive()) {
+            participant.reconnectDecisionPending(
+                    false
+            );
+
+            participant.reconnectPromptPending(
+                    false
+            );
+
+            participant.reconnectDeadlineMillis(
+                    0L
+            );
+
+            return;
+        }
+
+        participant.disconnected(true);
     }
 
     @Override
@@ -532,6 +810,16 @@ public final class MurderMysteryRuntime
         );
     }
 
+    private String disconnectEndReason;
+
+    private float disconnectRankedMultiplier =
+            1.0F;
+
+    private UUID decisiveDisconnectedPlayerId;
+
+    private MurderMysteryRole
+            decisiveDisconnectedRole;
+
     private List<MurderMysteryParticipant>
     resolveParticipants(
             GameInstance instance
@@ -555,6 +843,213 @@ public final class MurderMysteryRuntime
         }
 
         return result;
+    }
+
+    private int graceSeconds(
+            MurderMysteryRole role
+    ) {
+        var config =
+                settings.config()
+                        .reconnection;
+
+        if (role == null) {
+            return config.innocentGraceSeconds;
+        }
+
+        return switch (role) {
+            case MURDERER ->
+                    config.murdererGraceSeconds;
+
+            case DETECTIVE ->
+                    config.detectiveGraceSeconds;
+
+            case TROUBLEMAKER ->
+                    config.troublemakerGraceSeconds;
+
+            case INNOCENT ->
+                    config.innocentGraceSeconds;
+        };
+    }
+
+    private void tickReconnectDeadlines(
+            GameInstance instance
+    ) {
+        List<MurderMysteryParticipant> expired =
+                participants.values()
+                        .stream()
+                        .filter(participant ->
+                                !participant.dummy()
+                        )
+                        .filter(
+                                MurderMysteryParticipant
+                                        ::disconnected
+                        )
+                        .filter(
+                                MurderMysteryParticipant
+                                        ::reconnectExpired
+                        )
+                        .toList();
+
+        for (MurderMysteryParticipant participant :
+                expired) {
+            applyForfeit(
+                    instance,
+                    participant,
+                    "Délai de reconnexion expiré."
+            );
+
+            if (finished) {
+                return;
+            }
+        }
+    }
+
+    private void applyForfeit(
+            GameInstance instance,
+            MurderMysteryParticipant participant,
+            String personalReason
+    ) {
+        if (participant == null
+                || participant.forfeited()) {
+            return;
+        }
+
+        participant.forfeited(true);
+        participant.clearReconnectState();
+        participant.eliminate();
+
+        ServerPlayer player =
+                server.getPlayerList()
+                        .getPlayer(
+                                participant.participantId()
+                        );
+
+        if (player != null) {
+            player.sendSystemMessage(
+                    Component.literal(
+                            personalReason
+                                    + " Cela compte comme "
+                                    + "une défaite."
+                    ).withStyle(
+                            ChatFormatting.RED
+                    )
+            );
+        }
+
+        instance.broadcast(
+                Component.literal(
+                        participant.alias()
+                                + " a abandonné la partie."
+                ).withStyle(
+                        ChatFormatting.YELLOW
+                )
+        );
+
+        checkDisconnectVictory(
+                instance,
+                participant
+        );
+    }
+
+    private void checkDisconnectVictory(
+            GameInstance instance,
+            MurderMysteryParticipant forfeited
+    ) {
+        if (forfeited.role()
+                == MurderMysteryRole.MURDERER
+                && !hasLivingConnectedOrReservedRole(
+                MurderMysteryRole.MURDERER
+        )) {
+            endByDisconnect(
+                    instance,
+                    forfeited,
+                    "Victoire par déconnexion "
+                            + "du Meurtrier."
+            );
+
+            return;
+        }
+
+        if (forfeited.role()
+                != MurderMysteryRole.MURDERER
+                && !hasLivingConnectedOrReservedOpponent()) {
+            endByDisconnect(
+                    instance,
+                    forfeited,
+                    "Victoire du Meurtrier par "
+                            + "déconnexion du dernier adversaire."
+            );
+        }
+    }
+
+    private boolean hasLivingConnectedOrReservedRole(
+            MurderMysteryRole role
+    ) {
+        return participants.values()
+                .stream()
+                .anyMatch(participant ->
+                        participant.alive()
+                                && !participant.forfeited()
+                                && participant.role()
+                                == role
+                );
+    }
+
+    private boolean hasLivingConnectedOrReservedOpponent() {
+        return participants.values()
+                .stream()
+                .anyMatch(participant ->
+                        participant.alive()
+                                && !participant.forfeited()
+                                && participant.role()
+                                != MurderMysteryRole.MURDERER
+                );
+    }
+
+    private void endByDisconnect(
+            GameInstance instance,
+            MurderMysteryParticipant participant,
+            String reason
+    ) {
+        if (finished) {
+            return;
+        }
+
+        finished = true;
+
+        disconnectEndReason = reason;
+
+        disconnectRankedMultiplier =
+                settings.config()
+                        .reconnection
+                        .disconnectVictoryMultiplier;
+
+        decisiveDisconnectedPlayerId =
+                participant.participantId();
+
+        decisiveDisconnectedRole =
+                participant.role();
+
+        instance.end(
+                Component.literal(
+                        reason
+                                + " Récompense ranked : "
+                                + formatMultiplier(
+                                disconnectRankedMultiplier
+                        )
+                                + " des points."
+                ).withStyle(
+                        ChatFormatting.GOLD
+                )
+        );
+    }
+
+    private static String formatMultiplier(
+            float multiplier
+    ) {
+        return Math.round(
+                multiplier * 100.0F
+        ) + " %";
     }
 
     private List<ArenaPosition> resolveSpawns() {
@@ -905,6 +1400,11 @@ public final class MurderMysteryRuntime
         prepared = false;
         finished = false;
         troublemakerPresent = false;
+
+        disconnectEndReason = null;
+        disconnectRankedMultiplier = 1.0F;
+        decisiveDisconnectedPlayerId = null;
+        decisiveDisconnectedRole = null;
     }
 
     private static String formatTime(
@@ -926,6 +1426,120 @@ public final class MurderMysteryRuntime
                 "%02d:%02d",
                 minutes,
                 seconds
+        );
+    }
+    public void forfeitReconnect(
+            GameInstance instance,
+            UUID playerId,
+            String reason
+    ) {
+        MurderMysteryParticipant participant =
+                participants.get(playerId);
+
+        if (participant == null) {
+            return;
+        }
+
+        applyForfeit(
+                instance,
+                participant,
+                reason
+        );
+    }
+    public boolean prepareReconnectDecision(
+            GameInstance instance,
+            ServerPlayer player
+    ) {
+        if (instance == null
+                || player == null
+                || !canReconnect(
+                player.getUUID()
+        )) {
+            return false;
+        }
+
+        MurderMysteryParticipant participant =
+                participants.get(
+                        player.getUUID()
+                );
+
+        if (participant == null) {
+            return false;
+        }
+
+        /*
+         * Le joueur est connecté au serveur, mais reste absent
+         * de la partie jusqu'à ce qu'il accepte le GUI.
+         */
+        participant.reconnectDecisionPending(
+                true
+        );
+
+        scoreboardService.hide(player);
+
+        /*
+         * On restaure temporairement son état normal.
+         *
+         * Le snapshot reste présent et sera réutilisé si le joueur
+         * accepte de reprendre. Il ne faut donc pas appeler ici
+         * matchPlayers.exit(), qui archive le snapshot.
+         */
+        player.closeContainer();
+
+        player.setGameMode(
+                GameType.SPECTATOR
+        );
+
+        player.getInventory()
+                .clearContent();
+
+        player.getInventory()
+                .setChanged();
+
+        player.inventoryMenu
+                .broadcastChanges();
+
+        /*
+         * Place temporairement le joueur au point spectateur.
+         * Il ne peut pas interagir avec la partie pendant son choix.
+         */
+        if (arena.spectator != null) {
+            arena.spectator.teleport(
+                    server,
+                    player
+            );
+        }
+
+        return true;
+    }
+    public void cancelReconnect(
+            GameInstance instance,
+            ServerPlayer player,
+            String reason
+    ) {
+        if (instance == null || player == null) {
+            return;
+        }
+
+        MurderMysteryParticipant participant =
+                participants.get(
+                        player.getUUID()
+                );
+
+        if (participant == null) {
+            return;
+        }
+
+        scoreboardService.hide(player);
+
+        participant.reconnectDecisionPending(
+                false
+        );
+
+        applyForfeit(
+                instance,
+                participant,
+                reason
         );
     }
 }
